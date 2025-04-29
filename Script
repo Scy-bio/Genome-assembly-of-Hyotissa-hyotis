@@ -1,0 +1,41 @@
+## Genome assembly
+hifiasm -o hifiasm_sg --h1 HiC_R1.fq.gz --h2 HiC_R2.fq.gz -t 96 ccs.fq.gz  1>hifi.log 2>&1
+awk '{if($1=="S")print ">"$2"\n"$3}' p_utg.gfa > 01.p_utg.fasta
+
+mamba create -n fcs-gx
+mamba activate fcs-gx
+mamba install bioconda::ncbi-fcs-gx
+
+conda activate fcs-gx
+run_gx.py --fasta 01.p_utg.fasta --tax-id 102321 --gx-db ~/gxdb/all --out-dir ./gx_out/
+
+## scaffolding the contig into the chromosomes 
+bwa index 02.filt.fa
+bwa mem -5SP -t 28 02.filt.fa HiC_R1.fq.gz HiC_R2.fq.gz | ~/tools/samblaster/samblaster | samtools view - -@ 14 -S -h -b -F 3340 -o HiC.bam
+HapHiC/utils/filter_bam HiC.bam 1 --nm 3 --threads 14 | samtools view - -b -@ 14 -o HiC.filtered.bam
+HapHiC/haphic pipeline 02.filt.fa HiC.filtered.bam 20 --threads 32
+
+### adjust by using juicebox
+../HapHiC/utils/juicer post -o out_JBAT out_JBAT.review.assembly ../04.build/out_JBAT.liftover.agp ../02.filt.fa
+../../HapHiC/haphic plot ../out_JBAT.FINAL.agp ../../HiC.filtered.bam
+### merqury and busco 
+meryl k=21 count output Hhy.meryl 00.ccs.fq.gz
+merqury.sh 00.data/Hhy.meryl/ 00.new/05.juice/out_JBAT.FINAL.fa 01.meryl
+
+singularity exec -B /public1:/public1 /public1/db/sif/busco-v5.4.7.sif busco -c 12 -m genome --offline -i 02.filt.fa -l /public1/node3_shicy/metazoa_odb10/ -o busco2assembly
+singularity exec -B /public1:/public1 /public1/db/sif/busco-v5.4.7.sif busco -c 12 -m genome --offline -i HapA.fa -l /public1/node3_shicy/metazoa_odb10/ -o busco2hapA
+singularity exec -B /public1:/public1 /public1/db/sif/busco-v5.4.7.sif busco -c 12 -m genome --offline -i HapB.fa -l /public1/node3_shicy/metazoa_odb10/ -o busco2hapB
+
+## genome annotation BRAKER
+singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif BuildDatabase -name Hhy -engine ncbi XXX
+nohup singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif RepeatModeler --database Mer -threads 20  -LTRStruct 1>01.RepeatModeler.log 2>&1 &
+nohup singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif RepeatMasker -lib Car_edta.fa.mod.EDTA.TElib.fa -no_is -norna -pa 16 -gff -xsmall genome.HK.fa &
+
+singularity exec /home/data/braker3.sif braker.pl --genome=blk.fasta.masked --prot_seq=Metazoa.fa --rnaseq_sets_dirs=rnaseq2cgigas --softmasking --threads 32 --AUGUSTUS_CONFIG_PATH=/home/liushk/shicy/00.maker/augustus-3.4.0/config --GENEMARK_PATH=${ETP}/gmes --workingdir=braker2blk --rnaseq_sets_ids=S1,S2,S3,S4,S5,S6,S7,S8,S9 &
+singularity exec /home/data/braker3.sif braker.pl --genome=blk.fasta.masked --prot_seq=Metazoa.fa --rnaseq_sets_dirs=rnaseq2cgigas --softmasking --threads 32 --AUGUSTUS_CONFIG_PATH=/home/liushk/shicy/00.maker/augustus-3.4.0/config --GENEMARK_PATH=${ETP}/gmes --workingdir=braker2blk --rnaseq_sets_ids=S1,S2,S3,S4,S5,S6,S7,S8,S9 &
+
+nohup emapper.py -i Hy.hapA.pep.fa --output 01.hapA -m diamond -d euk --data_dir /public1/db/eggnog-mapper-data/ --cpu 10 &
+nohup emapper.py -i Hy.hapB.pep.fa --output 01.hapB -m diamond -d euk --data_dir /public1/db/eggnog-mapper-data/ --cpu 10 &
+
+## haplotype genome comparison
+minimap2 -t 20 -ax asm5 --eqx /public1/node3_liushk/med/01.split/ref.filtered.part_001.fa /public1/node3_liushk/med/01.split/qry.filtered.part_001.fa > out.sam
