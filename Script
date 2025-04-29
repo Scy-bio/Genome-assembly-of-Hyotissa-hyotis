@@ -27,15 +27,21 @@ singularity exec -B /public1:/public1 /public1/db/sif/busco-v5.4.7.sif busco -c 
 singularity exec -B /public1:/public1 /public1/db/sif/busco-v5.4.7.sif busco -c 12 -m genome --offline -i HapB.fa -l /public1/node3_shicy/metazoa_odb10/ -o busco2hapB
 
 ## genome annotation BRAKER
-singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif BuildDatabase -name Hhy -engine ncbi XXX
-nohup singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif RepeatModeler --database Mer -threads 20  -LTRStruct 1>01.RepeatModeler.log 2>&1 &
-nohup singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif RepeatMasker -lib Car_edta.fa.mod.EDTA.TElib.fa -no_is -norna -pa 16 -gff -xsmall genome.HK.fa &
+singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif BuildDatabase -name HapA -engine ncbi HapA.chr.fa 
+singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif BuildDatabase -name HapB -engine ncbi HapB.chr.fa
+nohup singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif RepeatModeler --database HapA -threads 20  -LTRStruct 1>01.RepeatModeler2HapB.log 2>&1 &
+nohup singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif RepeatModeler --database HapB -threads 20  -LTRStruct 1>01.RepeatModeler2HapB.log 2>&1 &
 
-singularity exec /home/data/braker3.sif braker.pl --genome=blk.fasta.masked --prot_seq=Metazoa.fa --rnaseq_sets_dirs=rnaseq2cgigas --softmasking --threads 32 --AUGUSTUS_CONFIG_PATH=/home/liushk/shicy/00.maker/augustus-3.4.0/config --GENEMARK_PATH=${ETP}/gmes --workingdir=braker2blk --rnaseq_sets_ids=S1,S2,S3,S4,S5,S6,S7,S8,S9 &
-singularity exec /home/data/braker3.sif braker.pl --genome=blk.fasta.masked --prot_seq=Metazoa.fa --rnaseq_sets_dirs=rnaseq2cgigas --softmasking --threads 32 --AUGUSTUS_CONFIG_PATH=/home/liushk/shicy/00.maker/augustus-3.4.0/config --GENEMARK_PATH=${ETP}/gmes --workingdir=braker2blk --rnaseq_sets_ids=S1,S2,S3,S4,S5,S6,S7,S8,S9 &
+singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif RepeatMasker -lib HapA.chr.fa.mod.EDTA.TElib.fa -no_is -norna -pa 20 -gff -xsmall HapA.chr.fa
+singularity exec -B /public1:/public1 /public1/db/sif/dfam-tetools-latest.sif RepeatMasker -lib HapB.chr.fa.mod.EDTA.TElib.fa -no_is -norna -pa 20 -gff -xsmall HapB.chr.fa
+
+singularity exec -B /public1:/public1 /public1/db/sif/braker3.sif braker.pl --genome=HapA.chr.fa.masked --prot_seq=Metazoa.fa,cgigas.fa --softmasking --threads 28 --AUGUSTUS_CONFIG_PATH=~/tools/Augustus/config  --workingdir=braker2hapA --bam=rna2bam/H1.bam,rna2bam/H2.bam,rna2bam/H3.bam
+singularity exec -B /public1:/public1 /public1/db/sif/braker3.sif braker.pl --genome=HapB.chr.fa.masked --prot_seq=Metazoa.fa,cgigas.fa --softmasking --threads 28 --AUGUSTUS_CONFIG_PATH=~/tools/Augustus/config  --workingdir=braker2hapB --bam=rna2bam/H1.bam,rna2bam/H2.bam,rna2bam/H3.bam
 
 nohup emapper.py -i Hy.hapA.pep.fa --output 01.hapA -m diamond -d euk --data_dir /public1/db/eggnog-mapper-data/ --cpu 10 &
 nohup emapper.py -i Hy.hapB.pep.fa --output 01.hapB -m diamond -d euk --data_dir /public1/db/eggnog-mapper-data/ --cpu 10 &
 
 ## haplotype genome comparison
-minimap2 -t 20 -ax asm5 --eqx /public1/node3_liushk/med/01.split/ref.filtered.part_001.fa /public1/node3_liushk/med/01.split/qry.filtered.part_001.fa > out.sam
+minimap2 -t 20 -ax asm5 --eqx HAP1.syri.fasta HAP2.syri.fasta  > out.sam
+syri -c out.sam -r HAP1.syri.fasta -q HAP2.syri.fasta -k -F S --nc 10
+plotsr --sr syri.out --genomes genome.txt -S 0.4 -o Hy.pdf
